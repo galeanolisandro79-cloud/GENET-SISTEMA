@@ -1,0 +1,76 @@
+const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
+
+const urlDeDatos = process.env.DATABASE_URL || '';
+const esLocal = urlDeDatos.includes('localhost') || urlDeDatos.includes('127.0.0.1');
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: esLocal ? false : { rejectUnauthorized: false }
+});
+
+async function iniciarBaseDeDatos() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS productos (
+      id SERIAL PRIMARY KEY,
+      codigo TEXT UNIQUE NOT NULL,
+      nombre TEXT NOT NULL,
+      precio NUMERIC(12,2) NOT NULL DEFAULT 0,
+      cantidad INTEGER NOT NULL DEFAULT 0,
+      imagen TEXT,
+      creado_en TIMESTAMPTZ NOT NULL DEFAULT now(),
+      actualizado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  // Por si la tabla ya existía sin la columna de imagen (despliegues anteriores).
+  await pool.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS imagen TEXT;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ventas (
+      id SERIAL PRIMARY KEY,
+      fecha TIMESTAMPTZ NOT NULL DEFAULT now(),
+      total NUMERIC(12,2) NOT NULL,
+      detalle JSONB NOT NULL
+    );
+  `);
+
+  // Tabla de pedidos de la tienda pública — compartida con "lo mejor de once".
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pedidos (
+      id SERIAL PRIMARY KEY,
+      fecha TIMESTAMPTZ NOT NULL DEFAULT now(),
+      cliente_nombre TEXT NOT NULL,
+      cliente_telefono TEXT NOT NULL,
+      cliente_direccion TEXT NOT NULL,
+      notas TEXT,
+      total NUMERIC(12,2) NOT NULL,
+      detalle JSONB NOT NULL,
+      estado TEXT NOT NULL DEFAULT 'pendiente'
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_usuarios (
+      id SERIAL PRIMARY KEY,
+      usuario TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL
+    );
+  `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos (lower(nombre));`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_productos_codigo ON productos (lower(codigo));`);
+
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS total FROM admin_usuarios');
+  if (rows[0].total === 0) {
+    const usuario = process.env.ADMIN_USER || 'admin';
+    const passwordPlano = process.env.ADMIN_PASSWORD || 'admin123';
+    const hash = await bcrypt.hash(passwordPlano, 10);
+    await pool.query(
+      'INSERT INTO admin_usuarios (usuario, password_hash) VALUES ($1, $2)',
+      [usuario, hash]
+    );
+    console.log(`Usuario administrador creado: "${usuario}". Cambiá la contraseña por defecto en producción.`);
+  }
+}
+
+module.exports = { pool, iniciarBaseDeDatos };
