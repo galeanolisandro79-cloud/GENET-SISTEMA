@@ -52,6 +52,9 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:4px;overflow:hidden;display:flex;flex-direction:column;transition:box-shadow .15s;}
   .card:hover{box-shadow:0 4px 14px rgba(13,39,72,0.1);}
   .card-body{padding:14px;display:flex;flex-direction:column;gap:4px;flex:1;}
+  .card-thumb{height:120px;background:var(--paper-alt);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .card-thumb img{width:100%;height:100%;object-fit:cover;}
+  .card-thumb .no-img{font-family:var(--font-mono);font-size:10px;color:#00000055;text-transform:uppercase;letter-spacing:.07em;}
   .sku{font-family:var(--font-mono);font-size:10px;color:var(--accent-dark);background:#ffffffb0;padding:2px 6px;border-radius:2px;width:fit-content;}
   .name{font-family:var(--font-display);font-size:13.5px;font-weight:600;line-height:1.25;min-height:34px;}
   .row-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:auto;gap:6px;}
@@ -146,7 +149,7 @@
 </style>
 </head>
 <body>
-
+ 
 <div id="login-screen">
   <div class="login-card">
     <h1><span class="brand-yellow">Sistema de GENET</span></h1>
@@ -160,7 +163,7 @@
     <button class="login-cancel" onclick="cancelarLogin()">Volver al punto de venta</button>
   </div>
 </div>
-
+ 
 <header class="topbar">
   <div class="brand">
     <h1><span class="brand-yellow">Sistema de GENET</span></h1>
@@ -175,12 +178,12 @@
     <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
     <input type="text" id="buscador" placeholder="Buscar por código o nombre..." oninput="onBuscar()">
   </div>
-  <div class="tabs" id="admin-actions" style="display:none;">
-    <button class="btn-ghost" onclick="cargarPaginaAdmin(1)">Actualizar</button>
-    <button class="btn-ghost" onclick="cerrarSesion()">Salir</button>
+  <div class="tabs" id="admin-actions">
+    <button class="btn-ghost" onclick="actualizar()">Actualizar</button>
+    <button class="btn-ghost" id="btn-salir" style="display:none;" onclick="cerrarSesion()">Salir</button>
   </div>
 </header>
-
+ 
 <!-- ---------- VISTA: PUNTO DE VENTA ---------- -->
 <div id="view-pos">
   <div class="layout">
@@ -203,21 +206,21 @@
     </aside>
   </div>
 </div>
-
+ 
 <!-- ---------- VISTA: ADMINISTRACIÓN ---------- -->
 <div id="view-admin" style="display:none;">
   <main class="admin-main">
     <section class="panel">
       <h2 id="form-title">Nuevo artículo</h2>
       <div class="sub">Los cambios se reflejan automáticamente en el punto de venta y en la tienda online.</div>
-
+ 
       <label>Imagen (opcional)</label>
       <label class="img-drop" id="img-drop">
         <img id="img-preview" style="display:none;">
         <div class="placeholder" id="img-placeholder">Tocar para subir una foto<br>del producto</div>
         <input type="file" id="img-input" accept="image/*" onchange="onImagenSeleccionada(event)">
       </label>
-
+ 
       <label>Código de artículo</label>
       <input type="text" id="f-codigo" placeholder="Ej: 00123">
       <label>Nombre del producto</label>
@@ -226,7 +229,7 @@
       <input type="number" id="f-precio" placeholder="0.00" min="0" step="0.01">
       <label>Cantidad disponible</label>
       <input type="number" id="f-cantidad" placeholder="0" min="0" step="1">
-
+ 
       <div class="form-actions">
         <button class="btn-primary" id="btn-guardar" onclick="guardarProducto()">Agregar artículo</button>
         <button class="btn-cancel" id="btn-cancelar" style="display:none;" onclick="cancelarEdicion()">Cancelar</button>
@@ -240,7 +243,7 @@
     </section>
   </main>
 </div>
-
+ 
 <!-- ---------- VISTA: PEDIDOS (de la tienda online) ---------- -->
 <div id="view-pedidos" style="display:none;">
   <main style="max-width:900px;margin:0 auto;padding:28px 24px 80px;">
@@ -248,7 +251,7 @@
     <div id="lista-pedidos"><div class="empty">Cargando pedidos...</div></div>
   </main>
 </div>
-
+ 
 <div id="recibo-imprimible">
   <h2>GENET</h2>
   <div class="rline">Comprobante de venta</div>
@@ -259,16 +262,17 @@
   <div class="total"><span>TOTAL</span><span id="rc-total"></span></div>
   <div class="foot">Gracias por su compra<br>Los artículos tienen garantía de 48 horas</div>
 </div>
-
+ 
 <script>
 const PAGINA_SIZE = 60;
 let adminToken = localStorage.getItem('genet_admin_token') || null;
 let posItems = [], posPage = 1, posTotal = 0, posQuery = '', buscadorTimeout = null;
 let adminItems = [], adminPage = 1, adminTotal = 0;
 let carrito = {};
+let vistaActual = 'pos';
 let editandoId = null;
 let imagenActual = '';
-
+ 
 async function api(path, opts = {}){
   const headers = Object.assign({'Content-Type':'application/json'}, opts.headers || {});
   if(opts.auth && adminToken){ headers['Authorization'] = 'Bearer ' + adminToken; }
@@ -279,7 +283,7 @@ async function api(path, opts = {}){
   return data;
 }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
+ 
 function mostrarVista(vista){
   if((vista==='admin' || vista==='pedidos') && !adminToken){
     document.getElementById('login-screen').style.display='flex';
@@ -292,7 +296,8 @@ function mostrarVista(vista){
   document.getElementById('view-admin').style.display = vista==='admin' ? 'block':'none';
   document.getElementById('view-pedidos').style.display = vista==='pedidos' ? 'block':'none';
   document.getElementById('search-wrap').style.display = vista==='pos' ? 'block':'none';
-  document.getElementById('admin-actions').style.display = (vista==='admin'||vista==='pedidos') ? 'flex':'none';
+  vistaActual = vista;
+  document.getElementById('btn-salir').style.display = vista==='pos' ? 'none' : 'inline-block';
   document.getElementById('brand-sub').textContent = vista==='pos' ? 'Punto de venta' : (vista==='admin' ? 'Panel de administración' : 'Pedidos online');
   document.getElementById('tab-pos').classList.toggle('active', vista==='pos');
   document.getElementById('tab-admin').classList.toggle('active', vista==='admin');
@@ -300,7 +305,7 @@ function mostrarVista(vista){
   if(vista==='admin') cargarPaginaAdmin(1);
   if(vista==='pedidos') cargarPedidos();
 }
-
+ 
 async function intentarLogin(){
   const usuario = document.getElementById('usuario').value.trim();
   const password = document.getElementById('pw').value;
@@ -316,7 +321,13 @@ async function intentarLogin(){
 document.getElementById('pw').addEventListener('keydown', e=>{ if(e.key==='Enter') intentarLogin(); });
 function cancelarLogin(){ document.getElementById('login-screen').style.display='none'; mostrarVista('pos'); }
 function cerrarSesion(){ adminToken = null; localStorage.removeItem('genet_admin_token'); mostrarVista('pos'); }
-
+ 
+function actualizar(){
+  if(vistaActual==='admin') cargarPaginaAdmin(1);
+  else if(vistaActual==='pedidos') cargarPedidos();
+  else cargarPaginaPos(1);
+}
+ 
 /* ---------- PUNTO DE VENTA ---------- */
 function onBuscar(){
   clearTimeout(buscadorTimeout);
@@ -343,7 +354,9 @@ function renderGridPos(){
     const stock = Number(p.cantidad)||0;
     const enCarrito = carrito[p.id] ? carrito[p.id].cantidad : 0;
     const disponible = stock - enCarrito;
-    return `<div class="card"><div class="card-body">
+    return `<div class="card">
+    <div class="card-thumb">${p.imagen ? `<img src="${p.imagen}" alt="${escapeHtml(p.nombre)}" loading="lazy">` : `<span class="no-img">Sin imagen</span>`}</div>
+    <div class="card-body">
       <span class="sku">#${escapeHtml(p.codigo)}</span>
       <div class="name">${escapeHtml(p.nombre)}</div>
       <div class="row-bottom"><span class="price">$${Number(p.precio||0).toFixed(2)}</span><span class="stock-tag">${disponible} disp.</span></div>
@@ -410,7 +423,7 @@ async function cobrarEImprimir(){
     setTimeout(()=>{ if(msg.textContent==='Venta registrada.') msg.textContent=''; }, 4000);
   }catch(e){ msg.className='msg err'; msg.textContent = e.message || 'No se pudo registrar la venta.'; }
 }
-
+ 
 /* ---------- ADMINISTRACIÓN ---------- */
 document.getElementById('img-drop').addEventListener('click', ()=>{ document.getElementById('img-input').click(); });
 function resizeImagen(file, maxWidth=320, calidad=0.6){
@@ -538,7 +551,7 @@ async function eliminarProducto(id){
     else { alert(e.message || 'No se pudo eliminar el artículo.'); }
   }
 }
-
+ 
 /* ---------- PEDIDOS ---------- */
 const ESTADOS = ['pendiente','confirmado','entregado','cancelado'];
 async function cargarPedidos(){
@@ -572,7 +585,7 @@ async function cambiarEstadoPedido(id, estado){
   try{ await api('/api/pedidos/'+id+'/estado', { method:'PUT', auth:true, body: JSON.stringify({estado}) }); }
   catch(e){ alert('No se pudo actualizar el estado.'); }
 }
-
+ 
 cargarPaginaPos(1);
 if('serviceWorker' in navigator){ window.addEventListener('load', ()=>{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }); }
 </script>
